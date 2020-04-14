@@ -1,0 +1,315 @@
+<style>
+    body {
+        background-color: black;
+    }
+    
+    #container {
+        position: relative;
+    }
+
+    #fat-finger-zone {
+        position: absolute;
+        width: 450px;
+        height: 450px;
+        margin: 5px;
+        background-color: rgba(255, 255, 255, 0.7);
+        border-radius: 50%;
+    }
+
+    #center-fill {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        top: 220px;
+        left: 220px;
+        background-color: white;
+    }
+
+    #colorwheel {
+        position: absolute;
+        width: 420px;
+        height: 420px;
+        margin: 20px;
+    }
+
+    #colorwheel span {
+        display: block;
+        position: absolute;
+        top: 210px;
+        left: 220px;
+        width: 200px;
+        height: 6px;
+        transform-origin: -10px 0%;
+    }
+
+    #selector-pane {
+        position: absolute;
+        width: 460px;
+        height: 460px;
+    }
+
+    #debug-panel {
+        position: absolute;
+        width: 420px;
+        margin: 20px;
+        top: 450;
+        color: white;
+    }
+
+    #color-preview {
+        display: block;
+        height: 20px;
+        width: 20px;
+        border: 1px solid black;
+        background-color: white;
+    }
+    
+</style>
+
+<div id='container'>
+    <div id='fat-finger-zone'></div>
+    <div id='center-fill'></div>
+    <div id='colorwheel'></div>
+    <canvas id='selector-pane'></div>
+</div>
+<div id='debug-panel'>
+    HSL:<br />
+    &nbsp;&nbsp;hue: <span id='h'>0</span><br />
+    &nbsp;&nbsp;saturation: <span id='s'>0</span><br />
+    &nbsp;&nbsp;light: <span id='l'>0</span><br />
+    Color:<br/>
+    <div id='color-preview'></div>
+</div>
+
+
+<script>
+
+    const FAT_FINGERS_OFFSET_PIXELS = 20;
+    const CIRCLE_RADIUS_PIXELS = 210;
+    const CANVAS_WIDTH_PIXELS = 460;
+    const CANVAS_MIDPOINT_PIXELS = 230
+
+    // Circle accepts cartesian coordinates
+    class Circle {
+      constructor(x, y, radius, color) {
+          this.x = x
+          this.y = y
+          this.radius = radius
+          this.color = color
+      }
+
+      draw(context) {
+          let coords = toCanvas(this.x, this.y);
+          context.fillStyle = this.color  
+          context.beginPath();
+          context.arc(coords.x, coords.y, this.radius, 0, 2 * Math.PI);
+          context.fill()
+          context.lineWidth = 1;
+          context.stroke();
+      }
+
+      setPoint(point) {
+        this.x = point.x
+        this.y = point.y
+      }
+    }
+
+    // Line accepts cartesian coordinates
+    class Line {
+      constructor(x, y) {
+          this.x = x
+          this.y = y
+          this.color = 'black'
+      }
+      draw(context) {
+        let coords = toCanvas(this.x, this.y);
+        ctx.beginPath();
+        ctx.moveTo(CANVAS_MIDPOINT_PIXELS, CANVAS_MIDPOINT_PIXELS);
+        ctx.lineTo(CANVAS_MIDPOINT_PIXELS + this.x, CANVAS_MIDPOINT_PIXELS)
+        ctx.lineTo(coords.x, coords.y);
+        ctx.closePath();
+        ctx.stroke(); 
+      }
+
+      setPoint(point) {
+        this.x = point.x
+        this.y = point.y
+      }
+    }
+
+    function drawColorWheel() {
+      for (var i=0; i<360; i++) {
+        span = document.createElement('span');
+        var id = "d" + i;
+        span.setAttribute('id', id);
+        var outerColor = "hsl(" + i + ", 100%, 50%)";
+        var innerColor = "hsl(" + i + ", 100%, 100%)";
+        span.style.background = "linear-gradient(90deg, " + innerColor + " 0%, " + outerColor + " 100%)";
+        span.style.transform = "rotate(" + i + "deg)"
+        document.getElementById('colorwheel').appendChild(span);
+      };
+    }
+
+    function setupCanvas() {
+      let canvas = document.getElementById('selector-pane');
+      canvas.width  = 460;
+      canvas.height = 460;
+      return canvas
+    }
+
+    // Convert canvas coordinates to cartesian coordinates
+    function toCartesian (x, y) {
+      return {
+        x: x - CANVAS_MIDPOINT_PIXELS,
+        y: y * -1 + CANVAS_MIDPOINT_PIXELS
+      }
+    }
+
+    // Convert cartesian coordinates to canvas coordinates
+    function toCanvas(x, y) {
+      return {
+        x: x + CANVAS_MIDPOINT_PIXELS,
+        y: (y / -1) + CANVAS_MIDPOINT_PIXELS
+      }
+    }
+
+    // Converts a click event to cartesian coords
+    let getMouseCoords = (canvas, event) => {
+      let canvasCoords = canvas.getBoundingClientRect()
+
+      return toCartesian(
+        event.pageX - canvasCoords.left,
+        event.pageY - canvasCoords.top
+      )
+    }
+
+    // Calculates distance from (0,0) to a cartesian point
+    let distanceFromCenter = (point) => {
+      let center = 0;
+
+      let b = Math.abs(point.x - center);
+      let a = Math.abs(point.y - center);
+
+      return Math.sqrt((a**2) + (b**2));
+    }
+
+    let cursorInBounds = (point) => {
+        return distanceFromCenter(point) <= (CIRCLE_RADIUS_PIXELS + FAT_FINGERS_OFFSET_PIXELS);
+    }
+
+    let calculateTheta = (point) => {
+      let center = {
+        x: 0,
+        y: 0
+      }
+
+      adjacent = point.x - center.x;
+      opposite = point.y - center.y;
+
+      thetaRadians = Math.atan(opposite/adjacent)
+
+      if (thetaRadians < 0) {
+        thetaRadians += 2 * Math.PI;
+      }
+
+      thetaDegrees = thetaRadians * 180 / Math.PI;
+
+      if (point.x < 0) {
+        thetaDegrees -= 180;
+      }
+
+      if (point.y <= 0 && point.x < 0) {
+        thetaDegrees = thetaDegrees + 360 
+      }
+
+      return {
+        radians: thetaRadians,
+        degrees: thetaDegrees
+      }
+    }
+
+    let getPointOnEdge = (radians, x) => {
+      let hypotenuse = CIRCLE_RADIUS_PIXELS;
+      let opposite = hypotenuse * Math.sin(radians)
+      let adjacent = hypotenuse * Math.cos(radians)
+
+      if (x < 0) {
+        adjacent *= -1
+        opposite *= -1
+      }
+
+      return {
+        x: adjacent,
+        y: opposite
+      }
+    }
+
+    // Logs a coordinate pair to the console
+    let logCoords = (point) => {
+      console.log("(" + point.x + ", " + point.y + ")");
+    }
+
+    let moveColorSelector = (event) => {
+      let point = getMouseCoords(canvas, event)
+
+      let lineDistance = distanceFromCenter(point)
+      
+      let theta = calculateTheta(point)
+
+      if (cursorInBounds(point)) {
+        let targetPoint = point
+
+        if ( lineDistance > CIRCLE_RADIUS_PIXELS ) {
+          targetPoint = getPointOnEdge(theta.radians, point.x)
+        } 
+
+        circle.setPoint(targetPoint)
+
+        hsl = polarToHsl({
+          r: lineDistance, 
+          theta: theta.degrees 
+        })
+
+        displayColor(hsl)
+      }
+    }
+
+    // Converts a polar coordinate pair (in degrees) to HSL color
+    let polarToHsl = (polarPoint) => {
+      let hue = polarPoint.theta * -1 + 360;
+      let saturation = 100;
+      let light = ((polarPoint.r / CIRCLE_RADIUS_PIXELS * 100) * -1 + 100) /2 + 50
+
+      return {
+        h: hue,
+        s: saturation,
+        l: light
+      }
+      
+    }
+
+    // display HSL color to screen
+    let displayColor = (hsl) => {
+      document.getElementById('h').innerHTML = Math.floor(hsl.h);
+      document.getElementById('s').innerHTML = Math.floor(hsl.s) + '%';
+      document.getElementById('l').innerHTML = Math.floor(hsl.l) + '%';
+      colorDisplay = document.getElementById('color-preview');
+      colorDisplay.style.background = 'hsl(' + hsl.h + ", " + hsl.s + "%, " + hsl.l +"%)"
+    }
+
+    // Setup
+    drawColorWheel()
+    let canvas = setupCanvas();
+    let ctx = canvas.getContext('2d');
+    let circle = new Circle(0, 0, 17, 'hsl(0, 0%, 50%)');
+    canvas.addEventListener('click', moveColorSelector);
+
+    // Animation loop
+    function animate() {
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+      circle.draw(ctx)
+      window.requestAnimationFrame(animate)
+    }
+
+    animate()
+</script>
